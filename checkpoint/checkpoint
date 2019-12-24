@@ -1,0 +1,2 @@
+model_checkpoint_path: "crypto_prediction_model-300"
+all_model_checkpoint_paths: "crypto_prediction_model-300"
