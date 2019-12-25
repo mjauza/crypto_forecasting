@@ -61,15 +61,15 @@ class Data():
         
         self.combined_data = combined_data
     
-    def load_pickle_data(self, pkl_file="combined_data.pkl"):
+    def load_pickle_data(self, pkl_file="../crypto_data/combined_data.pkl"):
         with open(pkl_file, "rb") as input:
             self.combined_data = pickle.load(input)
 
 
-data = Data()
+#data = Data()
 #filename = "OHLC_BCH_EUR.RDATA"
-directory = "C:/Users/david/OneDrive/Dokumenti/crypto_data"
+#directory = "C:/Users/david/OneDrive/Dokumenti/crypto_data"
 #data_var = data.read_rdata(filename)
 #data.combine_rdata(directory)
-data.load_pickle_data()
+#data.load_pickle_data()
 

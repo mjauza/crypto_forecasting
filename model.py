@@ -92,6 +92,8 @@ class Model():
             
             #self.optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate = self.lr).minimize(self.loss)
             self.optimizer = tf.compat.v1.train.GradientDescentOptimizer(learning_rate = self.lr).minimize(self.loss)
+            
+            #tf.compat.v1.get_default_graph().finalize()
         
         
     def initialize_variables_and_sess(self):
@@ -139,16 +141,16 @@ class Model():
     def initialze_saver(self):
         self.saver = tf.compat.v1.train.Saver()
     
-    def maybe_make_ckpt_dir(self, directory = "./checkpoint"):
+    def maybe_make_ckpt_dir(self, directory = "../crypto_results/checkpoint"):
         if not os.path.isdir(directory):
             os.mkdir(directory)
     
-    def save_model(self, directory="./checkpoint"):
+    def save_model(self, directory="../crypto_results/checkpoint"):
         self.maybe_make_ckpt_dir(directory)
         filename = directory + "/" + "crypto_prediction_model"
         self.saver.save(self.sess, filename, global_step = self.step)
         
-    def get_latest_checkpoint(self, directory = "./checkpoint"):
+    def get_latest_checkpoint(self, directory = "../crypto_results/checkpoint"):
         mypath = directory
         onlyfiles = [f for f in listdir(mypath) if isfile(join(mypath, f))]
         onlymeta = [f for f in onlyfiles if f[-4:] == "meta"]
@@ -159,15 +161,24 @@ class Model():
                 maxi = num
                 filename = f
         
-        self.step = maxi + 1
+        self.step = maxi
         self.latest_metafile = filename
         
-    def restore_latest_session(self, directory="./checkpoint"):
+    def restore_latest_session(self, directory="../crypto_results/checkpoint"):
         self.sess = tf.compat.v1.Session()
         self.get_latest_checkpoint(directory)
         print("restoring from model " + self.latest_metafile)
         filename = directory + "/" + self.latest_metafile
         self.saver = tf.compat.v1.train.import_meta_graph(filename)
+        ckpt = tf.compat.v2.train.latest_checkpoint(directory)
+        self.saver.restore(self.sess, ckpt)
+        self.sess.run(self.init_op)
+        
+    def restore_latest_session1(self, directory="../crypto_results/checkpoint"):
+        self.sess = tf.compat.v1.Session()
+        print("restoring model")
+        self.get_latest_checkpoint(directory)
+        self.initialze_saver()        
         ckpt = tf.compat.v2.train.latest_checkpoint(directory)
         self.saver.restore(self.sess, ckpt)
         self.sess.run(self.init_op)

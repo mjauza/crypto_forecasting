@@ -9,7 +9,9 @@ import numpy as np
 from data import Data
 from model import Model
 import matplotlib.pyplot as plt
-
+import logging
+from datetime import datetime
+from utils import Utils
 
 class Agent():
     def __init__(self, 
@@ -40,7 +42,7 @@ class Agent():
         self.define_generators()
         
         #define model
-        self.input_dim = (self.time_width, 5)
+        self.input_dim = (self.time_width, 6)
         self.model = Model(self.input_dim,self.lr,batch_size=self.batch_size)
         self.model.build_model(n1=self.n1,
                                s1=self.s1,
@@ -53,8 +55,10 @@ class Agent():
             self.model.initialize_variables_and_sess()
             self.model.initialze_saver()
         else:
-            self.model.restore_latest_session()
+            #self.model.restore_latest_session()
+            self.model.restore_latest_session1()
         
+        self.utils = Utils()
         
         self.symbol_list = ["BCH", "ETH", "LTC", "XBT", "XRP"]
         
@@ -74,11 +78,11 @@ class Agent():
         while y_index < max_index:
             x = self.data.combined_data.iloc[x_start_index:x_end_index, :].copy()
             
-            x1 = x[['High_BCH', 'Low_BCH', 'Close_BCH', 'Volume_BCH', 'Transactions_BCH']].values
-            x2 = x[['High_ETH', 'Low_ETH', 'Close_ETH','Volume_ETH', 'Transactions_ETH']].values
-            x3 = x[['High', 'Low', 'Close','Volume', 'Transactions']].values
-            x4 = x[['High_XBT', 'Low_XBT','Close_XBT', 'Volume_XBT', 'Transactions_XBT']].values
-            x5 = x[['High_XRP','Low_XRP', 'Close_XRP', 'Volume_XRP', 'Transactions_XRP']].values
+            x1 = x[['Open_BCH','High_BCH', 'Low_BCH', 'Close_BCH', 'Volume_BCH', 'Transactions_BCH']].values
+            x2 = x[['Open_ETH','High_ETH', 'Low_ETH', 'Close_ETH','Volume_ETH', 'Transactions_ETH']].values
+            x3 = x[['Open','High', 'Low', 'Close','Volume', 'Transactions']].values
+            x4 = x[['Open_XBT','High_XBT', 'Low_XBT','Close_XBT', 'Volume_XBT', 'Transactions_XBT']].values
+            x5 = x[['Open_XRP','High_XRP','Low_XRP', 'Close_XRP', 'Volume_XRP', 'Transactions_XRP']].values
             y = self.data.combined_data.iloc[y_index,:].copy()
             y = y[['Open_BCH', 'Open_ETH', 'Open', 'Open_XBT', 'Open_XRP']].values
             t = self.data.combined_data.iloc[y_index,:].copy()
@@ -100,7 +104,7 @@ class Agent():
         self.train_gen = self.generator(min_index=0, max_index=n, time_width=self.time_width, time_step=self.time_step)
         self.num_steps_train = round( round((n - self.time_width) / self.time_step) / self.batch_size)
         self.test_gen = self.generator(min_index=n-self.time_width, max_index=d, time_width=self.time_width, time_step=self.time_step)
-        self.num_steps_test = round( round((d - self.time_width - n) / self.time_step) / self.batch_size)
+        self.num_steps_test = round((d - self.time_width - n) / self.time_step)
     
     
     def run_generator_n_times(self, gen , n):
@@ -133,6 +137,14 @@ class Agent():
     
     def train_model(self, num_epochs=10):
         
+        f_date = datetime.now()
+        fname = str(datetime(f_date.year, f_date.month, f_date.day, f_date.hour, f_date.minute)) + "_train.log"
+        fname = fname.replace(":","-")
+        path = "../crypto_results/log/"+fname
+        
+        self.train_logger = self.utils.get_logger("train_logger", path)
+        
+        
         for i in range(num_epochs):
             losses = []
             for s in range(self.num_steps_train):
@@ -143,12 +155,23 @@ class Agent():
                 loss = self.model.update_model(inputs, y)
                 losses.append(loss)
             avg_loss = np.mean(np.array(losses))
-            print("Epoch {} :  Average loss = {}".format(i,avg_loss))
+            str0 = "Epoch {} :  Average loss = {}".format(i,avg_loss)
+            self.train_logger.info(str0)
+            print(str0)
             self.model.step += 1
         
         self.model.save_model()
     
     def test_model(self):
+        
+        f_date = datetime.now()
+        fname = str(datetime(f_date.year, f_date.month, f_date.day, f_date.hour, f_date.minute)) + "_test.log"
+        fname = fname.replace(":","-")
+        path = "../crypto_results/log/"+fname
+        
+        self.test_logger = self.utils.get_logger("test_logger", path)
+        
+        
         y_list = []
         y_pred_list = []
         y_errors = []
@@ -161,9 +184,12 @@ class Agent():
             y_pred_list.append(y_pred[0].tolist())
         
         self.plot_results(y_list,y_pred_list)
+        avg_error = np.mean(np.array(y_errors))
+        str0 = "Averge error = {}".format(avg_error)
+        self.test_logger.info(str0)
         return y_errors
     
-    def plot_results(self, y_list,y_pred_list):
+    def plot_results(self, y_list,y_pred_list, directory="../crypto_results/figures/"):
         y_np = np.array(y_list)
         y_pred_np = np.array(y_pred_list)
         print(y_np.shape)
@@ -176,7 +202,7 @@ class Agent():
             plt.plot(y_pred, label="predicted")
             plt.legend()
             plt.title(self.symbol_list[i])
-            filename = "figures/"+self.symbol_list[i]+"_test_resuls.jpg"
+            filename = directory+self.symbol_list[i]+"_test_resuls.jpg"
             plt.savefig(filename)
             plt.close()
     
@@ -190,12 +216,13 @@ if __name__ == "__main__":
                   n_lstm1 = 20,
                   test_ratio = 0.2,
                   batch_size=10,
-                  restore = False)
+                  restore = True)
     agent.train_model(num_epochs=300)
     y_errors = agent.test_model()
     avg_error = np.mean(np.array(y_errors))
     print("Avergae error = {}".format(avg_error))
     agent.model.close_session()
+    logging.shutdown()
             
             
         
