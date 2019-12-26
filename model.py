@@ -23,11 +23,6 @@ class Model():
     def build_model(self, w1=100, n1 = 100, s1=10, w2 = 10, n2 = 10, s2 = 1, n_lstm1 = 20):
         tf.compat.v1.disable_eager_execution()        
         with tf.device("/gpu:0"):
-            #self.Input1 = tf.compat.v1.placeholder(tf.float32, (self.batch_size,)+self.input_dim, name="input1")
-            #self.Input2 = tf.compat.v1.placeholder(tf.float32, (self.batch_size,)+self.input_dim, name="input2")
-            #self.Input3 = tf.compat.v1.placeholder(tf.float32, (self.batch_size,)+self.input_dim, name="input3")
-            #self.Input4 = tf.compat.v1.placeholder(tf.float32, (self.batch_size,)+self.input_dim, name="input4")
-            #self.Input5 = tf.compat.v1.placeholder(tf.float32, (self.batch_size,)+self.input_dim, name="input5")
             
             self.Input1 = tf.compat.v1.placeholder(tf.float32, (None,)+self.input_dim, name="input1")
             self.Input2 = tf.compat.v1.placeholder(tf.float32, (None,)+self.input_dim, name="input2")
@@ -37,7 +32,6 @@ class Model():
             
             Inputs = [self.Input1,self.Input2,self.Input3,self.Input4,self.Input5]
             
-            #self.Label = tf.compat.v1.placeholder(tf.float32, (self.batch_size, self.output_dim), name="output")
             self.Label = tf.compat.v1.placeholder(tf.float32, (None, self.output_dim), name="output")
                     
             #apply convolutions
@@ -94,10 +88,109 @@ class Model():
             self.optimizer = tf.compat.v1.train.GradientDescentOptimizer(learning_rate = self.lr).minimize(self.loss)
             
             #tf.compat.v1.get_default_graph().finalize()
+            
+    
+    def build_model_1(self,
+                      w1=100,
+                      n1 = 2000,
+                      s1=10,
+                      w2 = 10,
+                      n2 = 1000,
+                      s2 = 1,
+                      w3 = 10,
+                      n3 = 500,
+                      s3=1,
+                      w1_out=1000,
+                      w2_out=100,
+                      w3_out=50):
+        tf.compat.v1.disable_eager_execution()
+        with tf.device("/gpu:0"):
+            
+            self.Input1 = tf.compat.v1.placeholder(tf.float32, (None,)+self.input_dim, name="input1")
+            self.Input2 = tf.compat.v1.placeholder(tf.float32, (None,)+self.input_dim, name="input2")
+            self.Input3 = tf.compat.v1.placeholder(tf.float32, (None,)+self.input_dim, name="input3")
+            self.Input4 = tf.compat.v1.placeholder(tf.float32, (None,)+self.input_dim, name="input4")
+            self.Input5 = tf.compat.v1.placeholder(tf.float32, (None,)+self.input_dim, name="input5")
+            
+            Inputs = [self.Input1,self.Input2,self.Input3,self.Input4,self.Input5]
+            
+            self.Label = tf.compat.v1.placeholder(tf.float32, (None, self.output_dim), name="output")
+            
+            #apply convolutions
+            filters1 = []
+            strides1 = []
+            for i in range(5):
+                #width, in_chanells, num output features
+                filters1.append( tf.Variable(tf.zeros(np.array([w1,self.input_dim[1],n1])), name = "filter1"+str(i)))
+                strides1.append( s1 )
+            
+            nets = []
+            for i in range(5):
+                nets.append( tf.nn.relu(tf.nn.conv1d(Inputs[i], filters1[i], strides1[i], padding="SAME", name="conv1") ))
+            
+            #apply convolutions
+            filters2 = []
+            strides2 = []
+            n0_shape =  nets[0].get_shape()
+            f2 = int(n0_shape[1] / 1)
+            for i in range(5):
+                filters2.append( tf.Variable(tf.zeros(np.array([w2,f2,n2])), name = "filter2"+str(i)))                
+                strides2.append( s2 )
+            
+            for i in range(5):
+                nets[i] = tf.nn.relu(tf.nn.conv1d(nets[i], filters2[i], strides2[i], padding="SAME", name="conv2"))
+                
+            #apply convolutions
+            filters3 = []
+            strides3 = []
+            f3 = int( nets[0].get_shape()[1] )
+            for i in range(5):
+                filters3.append( tf.Variable(tf.zeros(np.array([w3, f3, n3])), name = "filter3"+str(i)))
+                strides3.append(s3)
+                
+            for i in range(5):
+                nets[i] = tf.nn.relu(tf.nn.conv1d(nets[i], filters3[i], strides3[i], padding="SAME", name="conv3"))
+            
+            #concantemate
+            net = tf.concat(nets, 1)
+            print("net shape",net.get_shape())
+            
+            #flatten
+            net = tf.compat.v1.reshape(net, tf.compat.v2.convert_to_tensor((-1,net.get_shape()[1]*net.get_shape()[2])))
+            print("net shape",net.get_shape())
+            
+            #fully connected
+            W1 = tf.Variable(tf.zeros(np.array([net.get_shape()[1], w1_out])), name = "W1")
+            b1 = tf.Variable(tf.zeros(np.array([w1_out])), name = "b1")
+            net = tf.add( tf.matmul(net,W1) , b1)
+            net = tf.nn.relu(net)
+            
+            W2 = tf.Variable(tf.zeros(np.array([w1_out, w2_out])), name = "W2")
+            b2 = tf.Variable(tf.zeros(np.array([w2_out])), name = "b2")
+            net = tf.add( tf.matmul(net,W2) , b2)
+            net = tf.nn.relu(net)
+            
+            W3 = tf.Variable(tf.zeros(np.array([w2_out, w3_out])), name = "W3")
+            b3 = tf.Variable(tf.zeros(np.array([w3_out])), name = "b3")
+            net = tf.add( tf.matmul(net,W3) , b3)
+            net = tf.nn.relu(net)
+            
+            W4 = tf.Variable(tf.zeros(np.array([w3_out, self.output_dim])), name = "W4")
+            b4 = tf.Variable(tf.zeros(np.array([self.output_dim])), name = "b4")
+            net = tf.add( tf.matmul(net,W4) , b4)
+            
+            self.output = net
+            
+            #define loss and loss        
+            self.loss = tf.math.reduce_mean(tf.compat.v2.losses.mse(self.output, self.Label))
+            
+            self.init_op = tf.compat.v1.global_variables_initializer()
+            
+            self.optimizer = tf.compat.v1.train.GradientDescentOptimizer(learning_rate = self.lr).minimize(self.loss)
         
         
     def initialize_variables_and_sess(self):
-        self.sess = tf.compat.v1.Session()
+        self.sess = tf.compat.v1.Session(config=tf.compat.v1.ConfigProto(log_device_placement=True))
         self.sess.run(self.init_op)
         
     def predict(self, inputs):
@@ -166,22 +259,24 @@ class Model():
         
     def restore_latest_session(self, directory="../crypto_results/checkpoint"):
         self.sess = tf.compat.v1.Session()
+        self.sess.run(self.init_op)
         self.get_latest_checkpoint(directory)
         print("restoring from model " + self.latest_metafile)
         filename = directory + "/" + self.latest_metafile
         self.saver = tf.compat.v1.train.import_meta_graph(filename)
         ckpt = tf.compat.v2.train.latest_checkpoint(directory)
         self.saver.restore(self.sess, ckpt)
-        self.sess.run(self.init_op)
+        
         
     def restore_latest_session1(self, directory="../crypto_results/checkpoint"):
-        self.sess = tf.compat.v1.Session()
+        self.sess = tf.compat.v1.Session(config=tf.compat.v1.ConfigProto(log_device_placement=True))
+        self.sess.run(self.init_op)
         print("restoring model")
         self.get_latest_checkpoint(directory)
         self.initialze_saver()        
         ckpt = tf.compat.v2.train.latest_checkpoint(directory)
         self.saver.restore(self.sess, ckpt)
-        self.sess.run(self.init_op)
+        
         
     
         

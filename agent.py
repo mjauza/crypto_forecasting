@@ -16,7 +16,7 @@ from utils import Utils
 class Agent():
     def __init__(self, 
                  time_width = 10000,
-                 time_step=1000 ,
+                 time_step=1 ,
                  lr = 0.001,
                  n1=100,s1=10,
                  n2 = 10,
@@ -44,11 +44,13 @@ class Agent():
         #define model
         self.input_dim = (self.time_width, 6)
         self.model = Model(self.input_dim,self.lr,batch_size=self.batch_size)
-        self.model.build_model(n1=self.n1,
-                               s1=self.s1,
-                               n2 = self.n2,
-                               s2 = self.s2,
-                               n_lstm1 = self.n_lstm1)
+        #self.model.build_model(n1=self.n1,
+        #                       s1=self.s1,
+        #                       n2 = self.n2,
+        #                       s2 = self.s2,
+        #                       n_lstm1 = self.n_lstm1)
+        
+        self.model.build_model_1()
         
         
         if not restore:            
@@ -101,11 +103,17 @@ class Agent():
     def define_generators(self):
         d = self.data.combined_data.shape[0]
         n = round(d*(1-self.test_ratio))
+        
         self.train_gen = self.generator(min_index=0, max_index=n, time_width=self.time_width, time_step=self.time_step)
         self.num_steps_train = round( round((n - self.time_width) / self.time_step) / self.batch_size)
+        
         self.test_gen = self.generator(min_index=n-self.time_width, max_index=d, time_width=self.time_width, time_step=self.time_step)
         self.num_steps_test = round((d - self.time_width - n) / self.time_step)
-    
+        
+        self.train_gen_eval = self.generator(min_index=0, max_index=n, time_width=self.time_width, time_step=self.time_step)
+        self.num_steps_train_eval = round((n - self.time_width) / self.time_step)
+        
+        
     
     def run_generator_n_times(self, gen , n):
         input1_batch = []
@@ -148,7 +156,7 @@ class Agent():
         for i in range(num_epochs):
             losses = []
             for s in range(self.num_steps_train):
-                #print("step {} of {}".format(s,self.num_steps_train))
+                print("step {} of {}".format(s,self.num_steps_train))
                 
                 inputs , y = self.run_generator_n_times(self.train_gen, self.batch_size)
                 
@@ -189,7 +197,23 @@ class Agent():
         self.test_logger.info(str0)
         return y_errors
     
-    def plot_results(self, y_list,y_pred_list, directory="../crypto_results/figures/"):
+    def evaluate_model(self, gen, num_steps):        
+        y_list = []
+        y_pred_list = []
+        y_errors = []
+        for s in range(num_steps):
+            inputs, y, t = next(gen)
+            y_pred = self.model.predict(inputs)
+            y_error = np.mean( (y - y_pred)**2 )
+            y_errors.append(y_error)
+            y_list.append(y.tolist())
+            y_pred_list.append(y_pred[0].tolist())
+        
+        self.plot_results(y_list,y_pred_list,ending="_train_results")
+        
+        
+    
+    def plot_results(self, y_list,y_pred_list, directory="../crypto_results/figures/", ending="_test_resuls"):
         y_np = np.array(y_list)
         y_pred_np = np.array(y_pred_list)
         print(y_np.shape)
@@ -202,12 +226,13 @@ class Agent():
             plt.plot(y_pred, label="predicted")
             plt.legend()
             plt.title(self.symbol_list[i])
-            filename = directory+self.symbol_list[i]+"_test_resuls.jpg"
+            filename = directory+self.symbol_list[i]+ending+".jpg"
             plt.savefig(filename)
             plt.close()
     
 if __name__ == "__main__":
     agent = Agent(time_width = 1000,
+                  time_step=1,
                   lr = 0.001,
                   n1=100,
                   s1=10,
@@ -215,12 +240,15 @@ if __name__ == "__main__":
                   s2 = 1,
                   n_lstm1 = 20,
                   test_ratio = 0.2,
-                  batch_size=10,
-                  restore = True)
-    agent.train_model(num_epochs=300)
+                  batch_size=256,
+                  restore = False)
+    agent.train_model(num_epochs=5)
     y_errors = agent.test_model()
     avg_error = np.mean(np.array(y_errors))
     print("Avergae error = {}".format(avg_error))
+    
+    agent.evaluate_model(agent.train_gen_eval, agent.num_steps_train_eval)
+    
     agent.model.close_session()
     logging.shutdown()
             
