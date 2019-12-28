@@ -187,8 +187,157 @@ class Model():
             self.init_op = tf.compat.v1.global_variables_initializer()
             
             self.optimizer = tf.compat.v1.train.GradientDescentOptimizer(learning_rate = self.lr).minimize(self.loss)
+            
+    
+    def build_model_2(self):
         
-        
+        tf.compat.v1.disable_eager_execution()
+        with tf.device("/gpu:0"):
+            
+            #deifne inouts and labels
+            self.Input1 = tf.compat.v1.placeholder(tf.float32, (None,)+self.input_dim, name="input1")
+            self.Input2 = tf.compat.v1.placeholder(tf.float32, (None,)+self.input_dim, name="input2")
+            self.Input3 = tf.compat.v1.placeholder(tf.float32, (None,)+self.input_dim, name="input3")
+            self.Input4 = tf.compat.v1.placeholder(tf.float32, (None,)+self.input_dim, name="input4")
+            self.Input5 = tf.compat.v1.placeholder(tf.float32, (None,)+self.input_dim, name="input5")
+            
+            Inputs = [self.Input1,self.Input2,self.Input3,self.Input4,self.Input5]
+            
+            self.Label = tf.compat.v1.placeholder(tf.float32, (None, self.output_dim), name="output")
+            
+            #apply lstm for each input
+            n_lstm1 = 100
+            #lstm_cells = []
+            #for i in range(5):
+            #    lstm_cells.append(tf.compat.v1.nn.rnn_cell.BasicLSTMCell(n_lstm1, name="LSTM1_"+str(i)))
+            
+            lstm_cell1 = tf.compat.v1.nn.rnn_cell.BasicLSTMCell(n_lstm1, name="LSTM1")
+            
+            inputs_unstacked = []
+            for i in range(5):
+                #input_unstacked = tf.unstack(Inputs[i],axis=1)
+                new_shape = (-1, Inputs[i].get_shape()[1]*Inputs[i].get_shape()[2])
+                input_unstacked = tf.reshape(Inputs[i], tf.compat.v2.convert_to_tensor(new_shape))
+                inputs_unstacked.append(input_unstacked)
+                
+            #print(inputs_unstacked)
+            #print(len(inputs_unstacked))
+            #print(len(inputs_unstacked[0]))
+            #print("inputs_unstacked.get_shape() = ",inputs_unstacked[0].get_shape())
+            
+            outputs, states = tf.compat.v1.nn.static_rnn(lstm_cell1, inputs_unstacked, dtype=tf.float32)
+                
+            #apply lstm
+            n_lstm2 = 100
+            #lstm_cells2 = []
+            #for i in range(5):
+            #    lstm_cells2.append(tf.compat.v1.nn.rnn_cell.basicLSTMCell(n_lstm2, name="LSTM2_"+str(i)))
+            
+            lstm_cell2 = tf.compat.v1.nn.rnn_cell.BasicLSTMCell(n_lstm2, name="LSTM2")
+            
+            outputs2, states2 = tf.compat.v1.nn.static_rnn(lstm_cell2, outputs, dtype=tf.float32)
+            
+            #concatatnet
+            net = tf.compat.v1.concat(outputs2, 1)
+            
+            #apply fully connceted
+            W1 = tf.Variable(tf.zeros(np.array([n_lstm2*5, 100])) , name="W1")
+            b1 = tf.Variable(tf.zeros(np.array([100])), name="b1")
+            net = tf.add(tf.matmul(net,W1),b1)
+            net = tf.nn.relu(net)
+            
+            W2 = tf.Variable(tf.zeros(np.array([100,100])), name="W2")
+            b2 = tf.Variable(tf.zeros(np.array([100])), name="b2")
+            net = tf.add(tf.matmul(net,W2), b2)
+            net = tf.nn.relu(net)
+            
+            W3 = tf.Variable(tf.zeros(np.array([100,self.output_dim])), name="W3")
+            b3 = tf.Variable(tf.zeros(np.array([self.output_dim])), name="b3")
+            net = tf.add(tf.matmul(net,W3), b3)
+            
+            self.output = net
+            
+            #define loss and loss        
+            self.loss = tf.math.reduce_mean(tf.compat.v2.losses.mse(self.output, self.Label))
+            
+            self.init_op = tf.compat.v1.global_variables_initializer()
+            
+            self.optimizer = tf.compat.v1.train.GradientDescentOptimizer(learning_rate = self.lr).minimize(self.loss)
+                
+    def build_model_3(self):
+        tf.compat.v1.disable_eager_execution()
+        with tf.device("/gpu:0"):
+            
+            #deifne inouts and labels
+            self.Input1 = tf.compat.v1.placeholder(tf.float32, (None,)+self.input_dim, name="input1")
+            self.Input2 = tf.compat.v1.placeholder(tf.float32, (None,)+self.input_dim, name="input2")
+            self.Input3 = tf.compat.v1.placeholder(tf.float32, (None,)+self.input_dim, name="input3")
+            self.Input4 = tf.compat.v1.placeholder(tf.float32, (None,)+self.input_dim, name="input4")
+            self.Input5 = tf.compat.v1.placeholder(tf.float32, (None,)+self.input_dim, name="input5")
+            
+            Inputs = [self.Input1,self.Input2,self.Input3,self.Input4,self.Input5]
+            
+            self.Label = tf.compat.v1.placeholder(tf.float32, (None, self.output_dim), name="output")
+            
+            #flaten inputs
+            inputs_flatten = []
+            d1 = Inputs[0].get_shape()[1]*Inputs[0].get_shape()[2]
+            print(Inputs[0].get_shape())
+            new_shape = tf.compat.v1.convert_to_tensor((-1, d1))            
+            for i in range(5):
+                inputs_flatten.append(tf.reshape(Inputs[i], new_shape))
+            
+            nets = []
+            
+            W1_list = []
+            b1_list = []
+            n1 = 100
+            print(new_shape.get_shape())
+            initializer = tf.compat.v2.random_normal_initializer()
+            
+            for i in range(5):
+                W1_list.append(tf.Variable(initializer(shape = np.array( (d1, n1) )), name="W1_"+str(i)))
+                b1_list.append(tf.Variable(initializer(shape = np.array([n1])), name="b1_"+str(i)))
+            
+            for i in range(5):                
+                nets.append( tf.nn.relu( tf.add(tf.matmul(inputs_flatten[i], W1_list[i]), b1_list[i]) ) )
+            
+            n2 = 50
+            W2_list = []
+            b2_list = []
+            for i in range(5):
+                W2_list.append(tf.Variable(initializer(shape = np.array( (n1, n2) )), name="W2_"+str(i)))
+                b2_list.append(tf.Variable(initializer(shape = np.array([n2])), name="b2_"+str(i)))
+            
+            for i in range(5):
+                nets[i] = tf.nn.relu( tf.add(tf.matmul(nets[i], W2_list[i]), b2_list[i]) )
+            
+            n3 = 1
+            W3_list = []
+            b3_list = []
+            for i in range(5):
+                W3_list.append(tf.Variable(initializer(shape = np.array( (n2, n3) )), name="W3_"+str(i)))
+                b3_list.append(tf.Variable(initializer(shape = np.array([n3])), name="b3_"+str(i)))
+            
+            for i in range(5):
+                nets[i] = tf.nn.relu( tf.add(tf.matmul(nets[i], W3_list[i]), b3_list[i]) )
+                
+            net = tf.compat.v1.concat(nets,1)
+            print("shape net = ",net.get_shape())
+            
+            self.output = net
+            
+            #define loss and loss  
+            mse = tf.compat.v2.losses.mse(self.output, self.Label)
+            print("mse shape = ",mse.get_shape())
+            self.loss = tf.math.reduce_mean(mse)
+            print("loss shape = ",self.loss.get_shape())
+            
+            self.init_op = tf.compat.v1.global_variables_initializer()
+            
+            self.optimizer = tf.compat.v1.train.GradientDescentOptimizer(learning_rate = self.lr).minimize(self.loss)
+            
+            
     def initialize_variables_and_sess(self):
         self.sess = tf.compat.v1.Session(config=tf.compat.v1.ConfigProto(log_device_placement=True))
         self.sess.run(self.init_op)
