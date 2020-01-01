@@ -20,7 +20,7 @@ class Model():
         self.step = step
         pass
     
-    def build_model(self, w1=100, n1 = 100, s1=10, w2 = 10, n2 = 10, s2 = 1, n_lstm1 = 20):
+    def build_model(self, w1=10, n1 = 1000, s1=1, w2 = 100, n2 = 500, s2 = 1, n_lstm1 = 100):
         tf.compat.v1.disable_eager_execution()        
         with tf.device("/gpu:0"):
             
@@ -33,13 +33,15 @@ class Model():
             Inputs = [self.Input1,self.Input2,self.Input3,self.Input4,self.Input5]
             
             self.Label = tf.compat.v1.placeholder(tf.float32, (None, self.output_dim), name="output")
-                    
+            
+            initializer = tf.compat.v2.random_normal_initializer()
+            
             #apply convolutions
             filters1 = []
             strides1 = []
             for i in range(5):
                 #width, in_chanells, num output features
-                filters1.append( tf.Variable(tf.zeros(np.array([w1,self.input_dim[1],n1])), name = "filter1"+str(i)))
+                filters1.append( tf.Variable(initializer(shape = np.array([w1,self.input_dim[1],n1])), name = "filter1"+str(i)))
                 strides1.append( s1 )
             
             nets = []
@@ -52,47 +54,81 @@ class Model():
             n0_shape =  nets[0].get_shape()
             f2 = int(n0_shape[1] / 1)
             for i in range(5):
-                filters2.append( tf.Variable(tf.zeros(np.array([w2,f2,n2])), name = "filter2"+str(i)))
-                
+                filters2.append( tf.Variable(initializer(shape = np.array([w2,f2,n2])), name = "filter2"+str(i)))                
                 strides2.append( s2 )
-            
-            #print((nets[0].get_shape()))
             
             #print((filters1[0].get_shape()))
             for i in range(5):
                 nets[i] = tf.nn.conv1d(nets[i], filters2[i], strides2[i], padding="SAME")
+            
+            w3 = 50
+            n3 = 500
+            s3 = 1
+            n1_shape = nets[0].get_shape()
+            f3 = int(n1_shape[1])
+            filters3 = []
+            strides3 = []
+            for i in range(5):
+                filters3.append(tf.Variable(initializer(shape = np.array([w3,f3,n3])), name = "filter3"+str(i)))
+                strides3.append(s3)
                 
+            for i in range(5):
+                nets[i] = tf.nn.conv1d(nets[i], filters3[i], strides3[i], padding = "SAME")
+            
             #concantemate
             net = tf.concat(nets, 1)
             
             #apply lstm
-            #print(net.get_shape())
+            
             net_unstacked = tf.unstack(net,axis=1)
             rnn_cell = tf.compat.v1.nn.rnn_cell.BasicLSTMCell(n_lstm1, name="LSTM_cell")
-            outputs, states = tf.compat.v1.nn.static_rnn(rnn_cell, net_unstacked, dtype=tf.float32)
-            outputs_st =tf.stack(outputs,axis=1)
+            outputs1, states1 = tf.compat.v1.nn.static_rnn(rnn_cell, net_unstacked, dtype=tf.float32)
             
-            print(outputs_st.get_shape())
+            
+            #apply lstm
+            n_lstm2 = 100
+            rnn_cell2 = tf.compat.v1.nn.rnn_cell.BasicLSTMCell(n_lstm2, name = "LSTM_cell2")
+            outputs2, states2 = tf.compat.v1.nn.static_rnn(rnn_cell2, outputs1, dtype = tf.float32)
+            
+            #apply lstm
+            n_lstm3 = 100
+            rnn_cell3 = tf.compat.v1.nn.rnn_cell.BasicLSTMCell(n_lstm3, name = "LSTM_cell3")
+            outputs3, states3 = tf.compat.v1.nn.static_rnn(rnn_cell3, outputs2, dtype = tf.float32)
+            
+            #outputs_st =tf.stack(outputs3,axis=1)
+            net = tf.compat.v1.concat(outputs3, 1)
+            print("net.get_shape() = ",net.get_shape())
+            
+            in_shape = net.get_shape()[1]
             #apply fully connected
-            W = tf.Variable(tf.zeros(np.array([n_lstm1, self.output_dim])),name="W")
-            b = tf.Variable(tf.zeros(np.array([self.output_dim])), name="b")
-            self.output = tf.nn.relu(tf.matmul(outputs[-1], W) + b)
+            W1_n = 500
+            W1 = tf.Variable(initializer(shape = np.array([in_shape, W1_n])), name = "W1")
+            b1 = tf.Variable(initializer(shape = np.array([W1_n])), name="b1")
+            
+            net = tf.nn.relu(tf.add(tf.matmul(net,W1), b1))
+            
+            W2_n = 500
+            W2 = tf.Variable(initializer(shape = np.array([W1_n, W2_n])), name = "W2")
+            b2 = tf.Variable(initializer(shape = np.array([W2_n])), name="b2")
+            
+            net = tf.nn.relu(tf.add(tf.matmul(net, W2),b2))
+                       
+            W3 = tf.Variable(initializer(shape = np.array([W2_n, self.output_dim])),name="W3")
+            b3 = tf.Variable(initializer(shape = np.array([self.output_dim])), name="b3")
+            self.output = tf.add(tf.matmul(net, W3), b3)
             
             #define loss and loss        
             self.loss = tf.math.reduce_mean(tf.compat.v2.losses.mse(self.output, self.Label))
             
             self.init_op = tf.compat.v1.global_variables_initializer()
-            
-            
-            #self.optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate = self.lr).minimize(self.loss)
+                        
             self.optimizer = tf.compat.v1.train.GradientDescentOptimizer(learning_rate = self.lr).minimize(self.loss)
             
-            #tf.compat.v1.get_default_graph().finalize()
             
     
     def build_model_1(self,
                       w1=100,
-                      n1 = 2000,
+                      n1 = 1000,
                       s1=10,
                       w2 = 10,
                       n2 = 1000,
@@ -100,9 +136,9 @@ class Model():
                       w3 = 10,
                       n3 = 500,
                       s3=1,
-                      w1_out=1000,
-                      w2_out=100,
-                      w3_out=50):
+                      w1_out=500,
+                      w2_out=500,
+                      w3_out=500):
         tf.compat.v1.disable_eager_execution()
         with tf.device("/gpu:0"):
             
@@ -116,12 +152,14 @@ class Model():
             
             self.Label = tf.compat.v1.placeholder(tf.float32, (None, self.output_dim), name="output")
             
+            initializer = tf.compat.v2.random_normal_initializer()
+            
             #apply convolutions
             filters1 = []
             strides1 = []
             for i in range(5):
                 #width, in_chanells, num output features
-                filters1.append( tf.Variable(tf.zeros(np.array([w1,self.input_dim[1],n1])), name = "filter1"+str(i)))
+                filters1.append( tf.Variable(initializer(shape = np.array([w1,self.input_dim[1],n1])), name = "filter1"+str(i)))
                 strides1.append( s1 )
             
             nets = []
@@ -134,7 +172,7 @@ class Model():
             n0_shape =  nets[0].get_shape()
             f2 = int(n0_shape[1] / 1)
             for i in range(5):
-                filters2.append( tf.Variable(tf.zeros(np.array([w2,f2,n2])), name = "filter2"+str(i)))                
+                filters2.append( tf.Variable(initializer(shape = np.array([w2,f2,n2])), name = "filter2"+str(i)))                
                 strides2.append( s2 )
             
             for i in range(5):
@@ -145,7 +183,7 @@ class Model():
             strides3 = []
             f3 = int( nets[0].get_shape()[1] )
             for i in range(5):
-                filters3.append( tf.Variable(tf.zeros(np.array([w3, f3, n3])), name = "filter3"+str(i)))
+                filters3.append( tf.Variable(initializer(shape = np.array([w3, f3, n3])), name = "filter3"+str(i)))
                 strides3.append(s3)
                 
             for i in range(5):
@@ -160,23 +198,23 @@ class Model():
             print("net shape",net.get_shape())
             
             #fully connected
-            W1 = tf.Variable(tf.zeros(np.array([net.get_shape()[1], w1_out])), name = "W1")
-            b1 = tf.Variable(tf.zeros(np.array([w1_out])), name = "b1")
+            W1 = tf.Variable(initializer(shape = np.array([net.get_shape()[1], w1_out])), name = "W1")
+            b1 = tf.Variable(initializer(shape = np.array([w1_out])), name = "b1")
             net = tf.add( tf.matmul(net,W1) , b1)
             net = tf.nn.relu(net)
             
-            W2 = tf.Variable(tf.zeros(np.array([w1_out, w2_out])), name = "W2")
-            b2 = tf.Variable(tf.zeros(np.array([w2_out])), name = "b2")
+            W2 = tf.Variable(initializer(shape = np.array([w1_out, w2_out])), name = "W2")
+            b2 = tf.Variable(initializer(shape = np.array([w2_out])), name = "b2")
             net = tf.add( tf.matmul(net,W2) , b2)
             net = tf.nn.relu(net)
             
-            W3 = tf.Variable(tf.zeros(np.array([w2_out, w3_out])), name = "W3")
-            b3 = tf.Variable(tf.zeros(np.array([w3_out])), name = "b3")
+            W3 = tf.Variable(initializer(shape = np.array([w2_out, w3_out])), name = "W3")
+            b3 = tf.Variable(initializer(shape = np.array([w3_out])), name = "b3")
             net = tf.add( tf.matmul(net,W3) , b3)
             net = tf.nn.relu(net)
             
-            W4 = tf.Variable(tf.zeros(np.array([w3_out, self.output_dim])), name = "W4")
-            b4 = tf.Variable(tf.zeros(np.array([self.output_dim])), name = "b4")
+            W4 = tf.Variable(initializer(shape = np.array([w3_out, self.output_dim])), name = "W4")
+            b4 = tf.Variable(initializer(shape = np.array([self.output_dim])), name = "b4")
             net = tf.add( tf.matmul(net,W4) , b4)
             
             self.output = net
@@ -206,13 +244,13 @@ class Model():
             self.Label = tf.compat.v1.placeholder(tf.float32, (None, self.output_dim), name="output")
             
             #apply lstm for each input
-            n_lstm1 = 100
+            n_lstm1 = 1000
             #lstm_cells = []
             #for i in range(5):
             #    lstm_cells.append(tf.compat.v1.nn.rnn_cell.BasicLSTMCell(n_lstm1, name="LSTM1_"+str(i)))
             
             lstm_cell1 = tf.compat.v1.nn.rnn_cell.BasicLSTMCell(n_lstm1, name="LSTM1")
-            
+            initializer = tf.compat.v2.random_normal_initializer()
             inputs_unstacked = []
             for i in range(5):
                 #input_unstacked = tf.unstack(Inputs[i],axis=1)
@@ -228,31 +266,37 @@ class Model():
             outputs, states = tf.compat.v1.nn.static_rnn(lstm_cell1, inputs_unstacked, dtype=tf.float32)
                 
             #apply lstm
-            n_lstm2 = 100
+            n_lstm2 = 500
             #lstm_cells2 = []
             #for i in range(5):
             #    lstm_cells2.append(tf.compat.v1.nn.rnn_cell.basicLSTMCell(n_lstm2, name="LSTM2_"+str(i)))
             
-            lstm_cell2 = tf.compat.v1.nn.rnn_cell.BasicLSTMCell(n_lstm2, name="LSTM2")
-            
+            lstm_cell2 = tf.compat.v1.nn.rnn_cell.BasicLSTMCell(n_lstm2, name="LSTM2")            
             outputs2, states2 = tf.compat.v1.nn.static_rnn(lstm_cell2, outputs, dtype=tf.float32)
             
+            #apply lstm
+            n_lstm3 = 500
+            lstm_cell3 = tf.compat.v1.nn.rnn_cell.BasicLSTMCell(n_lstm3, name="LSTM3")
+            outputs3, states3 = tf.compat.v1.nn.static_rnn(lstm_cell3, outputs2, dtype=tf.float32)
+            
             #concatatnet
-            net = tf.compat.v1.concat(outputs2, 1)
+            net = tf.compat.v1.concat(outputs3, 1)
             
             #apply fully connceted
-            W1 = tf.Variable(tf.zeros(np.array([n_lstm2*5, 100])) , name="W1")
-            b1 = tf.Variable(tf.zeros(np.array([100])), name="b1")
+            n1 = 500
+            W1 = tf.Variable(initializer(shape = np.array([n_lstm2*5, n1])) , name="W1")
+            b1 = tf.Variable(initializer(shape = np.array([n1])), name="b1")
             net = tf.add(tf.matmul(net,W1),b1)
             net = tf.nn.relu(net)
             
-            W2 = tf.Variable(tf.zeros(np.array([100,100])), name="W2")
-            b2 = tf.Variable(tf.zeros(np.array([100])), name="b2")
+            n2 = 500
+            W2 = tf.Variable(initializer(shape = np.array([n1,n2])), name="W2")
+            b2 = tf.Variable(initializer(shape = np.array([n2])), name="b2")
             net = tf.add(tf.matmul(net,W2), b2)
             net = tf.nn.relu(net)
             
-            W3 = tf.Variable(tf.zeros(np.array([100,self.output_dim])), name="W3")
-            b3 = tf.Variable(tf.zeros(np.array([self.output_dim])), name="b3")
+            W3 = tf.Variable(initializer(shape = np.array([n2,self.output_dim])), name="W3")
+            b3 = tf.Variable(initializer(shape = np.array([self.output_dim])), name="b3")
             net = tf.add(tf.matmul(net,W3), b3)
             
             self.output = net
@@ -320,7 +364,7 @@ class Model():
                 b3_list.append(tf.Variable(initializer(shape = np.array([n3])), name="b3_"+str(i)))
             
             for i in range(5):
-                nets[i] = tf.nn.relu( tf.add(tf.matmul(nets[i], W3_list[i]), b3_list[i]) )
+                nets[i] = tf.add(tf.matmul(nets[i], W3_list[i]), b3_list[i]) 
                 
             net = tf.compat.v1.concat(nets,1)
             print("shape net = ",net.get_shape())

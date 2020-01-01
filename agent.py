@@ -57,8 +57,9 @@ class Agent():
         #                       s2 = self.s2,
         #                       n_lstm1 = self.n_lstm1)
         
+        self.model.build_model()
         #self.model.build_model_1()
-        self.model.build_model_3()
+        #self.model.build_model_2()
         
         if not restore:            
             self.model.initialize_variables_and_sess()
@@ -237,6 +238,8 @@ class Agent():
         y_list = []
         y_pred_list = []
         y_errors_scaled = []
+        y_scaled_list = []
+        y_scaled_pred_list = []
         for s in range(self.num_steps_test):
             inputs, y, t, y_original = next(self.test_gen)
             y_pred = self.model.predict(inputs)
@@ -247,8 +250,12 @@ class Agent():
             y_errors_scaled.append(y_error_scaled)
             y_list.append(y_original.tolist())
             y_pred_list.append(y_pred_unscaled[0].tolist())
+            
+            y_scaled_list.append(y.tolist())
+            y_scaled_pred_list.append(y_pred[0].tolist())
         
         self.plot_results(y_list,y_pred_list)
+        self.plot_results(y_scaled_list, y_scaled_pred_list, ending = "_scaled_test_results")
         avg_error = np.mean(np.array(y_errors_scaled))
         str0 = "Averge error = {}".format(avg_error)
         self.test_logger.info(str0)
@@ -257,6 +264,8 @@ class Agent():
     def evaluate_model(self, gen, num_steps):        
         y_list = []
         y_pred_list = []
+        y_scaled_list = []
+        y_scaled_pred_list = []
         y_errors = []
         for s in range(num_steps):
             inputs, y, t, y_original = next(gen)
@@ -268,9 +277,12 @@ class Agent():
             y_errors.append(y_error)
             y_list.append(y_original.tolist())
             y_pred_list.append(y_pred_unscaled[0].tolist())
+            
+            y_scaled_list.append(y.tolist())
+            y_scaled_pred_list.append(y_pred[0].tolist())
         
         self.plot_results(y_list,y_pred_list,ending="_train_results")
-        
+        self.plot_results(y_scaled_list, y_scaled_pred_list, ending = "_scaled_train_results")
         
     
     def plot_results(self, y_list,y_pred_list, directory="../crypto_results/figures/", ending="_test_resuls"):
@@ -303,7 +315,7 @@ if __name__ == "__main__":
                   test_ratio = 0.2,
                   batch_size=512,
                   restore = False)
-    agent.train_model(num_epochs=3)
+    agent.train_model(num_epochs=5)
     y_errors = agent.test_model()
     avg_error = np.mean(np.array(y_errors))
     print("Avergae error = {}".format(avg_error))
