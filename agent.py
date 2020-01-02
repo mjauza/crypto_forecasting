@@ -57,9 +57,9 @@ class Agent():
         #                       s2 = self.s2,
         #                       n_lstm1 = self.n_lstm1)
         
-        self.model.build_model()
+        #self.model.build_model()
         #self.model.build_model_1()
-        #self.model.build_model_2()
+        self.model.build_model_3()
         
         if not restore:            
             self.model.initialize_variables_and_sess()
@@ -104,7 +104,7 @@ class Agent():
         """
         x_start_index = min_index
         x_end_index = x_start_index + time_width
-        y_index = x_end_index - 1
+        y_index = x_end_index
         
         
         while y_index < max_index:
@@ -138,7 +138,7 @@ class Agent():
                 print("reseting generator")                
                 x_start_index = min_index
                 x_end_index = x_start_index + time_width
-                y_index = x_end_index - 1
+                y_index = x_end_index
     
     def define_generators(self):
         d = self.data.combined_data.shape[0]
@@ -238,27 +238,63 @@ class Agent():
         y_list = []
         y_pred_list = []
         y_errors_scaled = []
+        y_errors = []
         y_scaled_list = []
         y_scaled_pred_list = []
+        up_moves_pred_list = []
+        up_moves_real_list = []
         for s in range(self.num_steps_test):
             inputs, y, t, y_original = next(self.test_gen)
             y_pred = self.model.predict(inputs)
-            
+                        
             y_pred_unscaled = self.unscale_y(y_pred)
             
+            if s == 0:
+                y_prev = y_original
+                y_pred_prev = y_pred_unscaled
+            
+            
             y_error_scaled = np.mean( (y - y_pred)**2 )
+            y_error = np.mean((y_original - y_pred_unscaled)**2)
+            
             y_errors_scaled.append(y_error_scaled)
+            y_errors.append(y_error)
+            
             y_list.append(y_original.tolist())
             y_pred_list.append(y_pred_unscaled[0].tolist())
             
             y_scaled_list.append(y.tolist())
             y_scaled_pred_list.append(y_pred[0].tolist())
+            
+            if s > 0:
+                up_pred = (y_pred_unscaled - y_pred_prev) > 0
+                up_real = (y_original - y_prev) > 0
+                up_moves_pred_list.append(up_pred)
+                up_moves_real_list.append(up_real)
+                y_prev = y_original
+                y_pred_prev = y_pred_unscaled
         
         self.plot_results(y_list,y_pred_list)
         self.plot_results(y_scaled_list, y_scaled_pred_list, ending = "_scaled_test_results")
-        avg_error = np.mean(np.array(y_errors_scaled))
-        str0 = "Averge error = {}".format(avg_error)
+        
+        avg_scaled_error = np.mean(np.array(y_errors_scaled))
+        avg_error = np.mean(np.array(y_errors))
+        accuracy = np.mean(np.array(up_moves_pred_list) == np.array(up_moves_real_list))
+        
+        str_1 = "Doing test evaluation"
+        str0 = "Averge MSE scaled error = {}".format(avg_scaled_error)
+        str1 = "Average MSE error = {}".format(avg_error)
+        str2 = "Accuracy = {}".format(accuracy)
+        
+        print(str_1)
+        print(str0)
+        print(str1)
+        print(str2)
+        
+        self.test_logger.info(str_1)
         self.test_logger.info(str0)
+        self.test_logger.info(str1)
+        self.test_logger.info(str2)
         return y_errors_scaled
     
     def evaluate_model(self, gen, num_steps):        
@@ -266,20 +302,55 @@ class Agent():
         y_pred_list = []
         y_scaled_list = []
         y_scaled_pred_list = []
+        y_scaled_errors = []
         y_errors = []
+        up_moves_pred_list = []
+        up_moves_real_list = []
+        
         for s in range(num_steps):
             inputs, y, t, y_original = next(gen)
-            y_pred = self.model.predict(inputs)
-            
+            y_pred = self.model.predict(inputs)            
             y_pred_unscaled = self.unscale_y(y_pred)
             
-            y_error = np.mean( (y - y_pred)**2 )
+            if s == 0:
+                y_prev = y_original
+                y_pred_prev = y_pred_unscaled
+            
+            
+            y_scaled_error = np.mean( (y - y_pred)**2 )
+            y_scaled_errors.append(y_scaled_error)
+            
+            y_error = np.mean( (y_original - y_pred_unscaled)**2 )
             y_errors.append(y_error)
+            
             y_list.append(y_original.tolist())
             y_pred_list.append(y_pred_unscaled[0].tolist())
             
             y_scaled_list.append(y.tolist())
             y_scaled_pred_list.append(y_pred[0].tolist())
+            
+            if s > 0:
+                up_pred = (y_pred_unscaled - y_pred_prev) > 0
+                up_real = (y_original - y_prev) > 0
+                up_moves_pred_list.append(up_pred)
+                up_moves_real_list.append(up_real)
+                y_prev = y_original
+                y_pred_prev = y_pred_unscaled
+        
+        avg_error = np.mean(np.array(y_errors))
+        accuracy = np.mean( np.array(up_moves_pred_list) == np.array(up_moves_real_list) )
+        
+        str0 = "Doing training evaluation"
+        str1 = "Average MSE error = {}".format(avg_error)
+        str2 = "Accuracy = {}".format(accuracy)
+        
+        self.test_logger.info(str0)
+        self.test_logger.info(str1)
+        self.test_logger.info(str2)
+        
+        print(str0)
+        print(str1)
+        print(str2)
         
         self.plot_results(y_list,y_pred_list,ending="_train_results")
         self.plot_results(y_scaled_list, y_scaled_pred_list, ending = "_scaled_train_results")
@@ -314,11 +385,11 @@ if __name__ == "__main__":
                   n_lstm1 = 20,
                   test_ratio = 0.2,
                   batch_size=512,
-                  restore = False)
-    agent.train_model(num_epochs=5)
+                  restore = True)
+    agent.train_model(num_epochs=15)
     y_errors = agent.test_model()
-    avg_error = np.mean(np.array(y_errors))
-    print("Avergae error = {}".format(avg_error))
+    #avg_error = np.mean(np.array(y_errors))
+    #print("Avergae error = {}".format(avg_error))
     
     agent.evaluate_model(agent.train_gen_eval, agent.num_steps_train_eval)
     
