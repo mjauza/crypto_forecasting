@@ -16,7 +16,7 @@ from utils import Utils
 from sklearn.preprocessing import StandardScaler
 
 class Agent():
-    def __init__(self, 
+    def __init__(self,                 
                  time_width = 10000,
                  time_step=1 ,
                  lr = 0.001,
@@ -26,7 +26,8 @@ class Agent():
                  n_lstm1 = 20,
                  test_ratio = 0.2,
                  batch_size = 10,
-                 restore = False):
+                 restore = False,
+                 restore_dir = "../crypto_results/checkpoint"):
         self.time_width = time_width
         self.lr = lr
         self.n1 = n1
@@ -59,14 +60,14 @@ class Agent():
         
         #self.model.build_model()
         #self.model.build_model_1()
-        self.model.build_model_3()
+        self.model.build_model_4()
         
         if not restore:            
             self.model.initialize_variables_and_sess()
             self.model.initialze_saver()
         else:
             #self.model.restore_latest_session()
-            self.model.restore_latest_session1()
+            self.model.restore_latest_session1(restore_dir)
         
         self.utils = Utils()
         
@@ -267,34 +268,38 @@ class Agent():
             y_scaled_pred_list.append(y_pred[0].tolist())
             
             if s > 0:
-                up_pred = (y_pred_unscaled - y_pred_prev) > 0
+                up_pred = (y_pred_unscaled[0] - y_pred_prev[0]) > 0
                 up_real = (y_original - y_prev) > 0
-                up_moves_pred_list.append(up_pred)
-                up_moves_real_list.append(up_real)
+                up_moves_pred_list.append(up_pred.tolist())
+                up_moves_real_list.append(up_real.tolist())
                 y_prev = y_original
                 y_pred_prev = y_pred_unscaled
         
         self.plot_results(y_list,y_pred_list)
         self.plot_results(y_scaled_list, y_scaled_pred_list, ending = "_scaled_test_results")
         
-        avg_scaled_error = np.mean(np.array(y_errors_scaled))
-        avg_error = np.mean(np.array(y_errors))
-        accuracy = np.mean(np.array(up_moves_pred_list) == np.array(up_moves_real_list))
+        #avg_scaled_error = np.mean(np.array(y_errors_scaled))
+        #avg_error = np.mean(np.array(y_errors))
+        #accuracy = np.mean(np.array(up_moves_pred_list) == np.array(up_moves_real_list))
         
         str_1 = "Doing test evaluation"
-        str0 = "Averge MSE scaled error = {}".format(avg_scaled_error)
-        str1 = "Average MSE error = {}".format(avg_error)
-        str2 = "Accuracy = {}".format(accuracy)
+        #str0 = "Averge MSE scaled error = {}".format(avg_scaled_error)
+        #str1 = "Average MSE error = {}".format(avg_error)
+        #str2 = "Accuracy = {}".format(accuracy)
         
         print(str_1)
-        print(str0)
-        print(str1)
-        print(str2)
+        #print(str0)
+        #print(str1)
+        #print(str2)
         
         self.test_logger.info(str_1)
-        self.test_logger.info(str0)
-        self.test_logger.info(str1)
-        self.test_logger.info(str2)
+        #self.test_logger.info(str0)
+        #self.test_logger.info(str1)
+        #self.test_logger.info(str2)
+        
+        self.calculate_acc(up_moves_pred_list, up_moves_real_list, self.test_logger)
+        self.calculate_rmse(y_list, y_pred_list, self.test_logger)
+        
         return y_errors_scaled
     
     def evaluate_model(self, gen, num_steps):        
@@ -330,27 +335,30 @@ class Agent():
             y_scaled_pred_list.append(y_pred[0].tolist())
             
             if s > 0:
-                up_pred = (y_pred_unscaled - y_pred_prev) > 0
+                up_pred = (y_pred_unscaled[0] - y_pred_prev[0]) > 0
                 up_real = (y_original - y_prev) > 0
-                up_moves_pred_list.append(up_pred)
-                up_moves_real_list.append(up_real)
+                up_moves_pred_list.append(up_pred.tolist())
+                up_moves_real_list.append(up_real.tolist())
                 y_prev = y_original
                 y_pred_prev = y_pred_unscaled
         
-        avg_error = np.mean(np.array(y_errors))
-        accuracy = np.mean( np.array(up_moves_pred_list) == np.array(up_moves_real_list) )
+        #avg_error = np.mean(np.array(y_errors))
+        #accuracy = np.mean( np.array(up_moves_pred_list) == np.array(up_moves_real_list) )
         
         str0 = "Doing training evaluation"
-        str1 = "Average MSE error = {}".format(avg_error)
-        str2 = "Accuracy = {}".format(accuracy)
+        #str1 = "Average MSE error = {}".format(avg_error)
+        #str2 = "Accuracy = {}".format(accuracy)
         
         self.test_logger.info(str0)
-        self.test_logger.info(str1)
-        self.test_logger.info(str2)
+        #self.test_logger.info(str1)
+        #self.test_logger.info(str2)
         
         print(str0)
-        print(str1)
-        print(str2)
+        #print(str1)
+        #print(str2)
+        
+        self.calculate_acc(up_moves_pred_list, up_moves_real_list, self.test_logger)
+        self.calculate_rmse(y_list, y_pred_list, self.test_logger)
         
         self.plot_results(y_list,y_pred_list,ending="_train_results")
         self.plot_results(y_scaled_list, y_scaled_pred_list, ending = "_scaled_train_results")
@@ -374,6 +382,35 @@ class Agent():
             plt.savefig(filename)
             plt.close()
     
+    def calculate_acc(self,up_moves_pred_list, up_moves_real_list, logger):
+        up_moves_pred_np = np.array(up_moves_pred_list)
+        up_moves_real_np = np.array(up_moves_real_list)
+        print("up_moves_real_np.shape = ",up_moves_real_np.shape)
+        print("up_moves_pred_np.shape = ",up_moves_pred_np.shape)
+        for i in range(up_moves_pred_np.shape[1]):
+            symbol = self.symbol_list[i]
+            acc = np.mean(up_moves_pred_np[:,i] == up_moves_real_np[:,i])
+            str0 = "Accuracy for " + symbol + " = " + str(acc)
+            logger.info(str0)
+            print(str0)
+    
+    def calculate_rmse(self, y_list, y_pred_list, logger):
+        y_np = np.array(y_list)
+        y_pred_np = np.array(y_pred_list)
+        for i in range(y_np.shape[1]):
+            symbol = self.symbol_list[i]
+            mse = np.mean( (y_np[:,i] -  y_pred_np[:,i])**2 )
+            rmse = np.sqrt(mse)
+            str0 = "Symbol : " + symbol
+            str1 = "MSE = {}".format(mse)
+            str2 = "RMSE = {}".format(rmse)
+            logger.info(str0)
+            logger.info(str1)
+            logger.info(str2)
+            print(str0)
+            print(str1)
+            print(str2)
+    
 if __name__ == "__main__":
     agent = Agent(time_width = 100,
                   time_step=100,
@@ -385,8 +422,9 @@ if __name__ == "__main__":
                   n_lstm1 = 20,
                   test_ratio = 0.2,
                   batch_size=512,
-                  restore = True)
-    agent.train_model(num_epochs=15)
+                  restore = True,
+                  restore_dir="../crypto_results/checkpoint")
+    agent.train_model(num_epochs=30)
     y_errors = agent.test_model()
     #avg_error = np.mean(np.array(y_errors))
     #print("Avergae error = {}".format(avg_error))

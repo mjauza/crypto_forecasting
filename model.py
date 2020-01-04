@@ -380,7 +380,81 @@ class Model():
             self.init_op = tf.compat.v1.global_variables_initializer()
             
             self.optimizer = tf.compat.v1.train.GradientDescentOptimizer(learning_rate = self.lr).minimize(self.loss)
+    
+    def build_model_4(self):
+        
+        tf.compat.v1.disable_eager_execution()
+        with tf.device("/gpu:0"):
             
+            #deifne inouts and labels
+            self.Input1 = tf.compat.v1.placeholder(tf.float32, (None,)+self.input_dim, name="input1")
+            self.Input2 = tf.compat.v1.placeholder(tf.float32, (None,)+self.input_dim, name="input2")
+            self.Input3 = tf.compat.v1.placeholder(tf.float32, (None,)+self.input_dim, name="input3")
+            self.Input4 = tf.compat.v1.placeholder(tf.float32, (None,)+self.input_dim, name="input4")
+            self.Input5 = tf.compat.v1.placeholder(tf.float32, (None,)+self.input_dim, name="input5")
+            
+            Inputs = [self.Input1,self.Input2,self.Input3,self.Input4,self.Input5]
+            
+            self.Label = tf.compat.v1.placeholder(tf.float32, (None, self.output_dim), name="output")
+            
+            #apply lstm for each input
+            n_lstm1 = 1000
+            
+            lstm_cell1 = tf.compat.v1.nn.rnn_cell.BasicLSTMCell(n_lstm1, name="LSTM1")
+            initializer = tf.compat.v2.random_normal_initializer()
+            inputs_unstacked = []
+            for i in range(5):
+                new_shape = (-1, Inputs[i].get_shape()[1]*Inputs[i].get_shape()[2])
+                input_unstacked = tf.reshape(Inputs[i], tf.compat.v2.convert_to_tensor(new_shape))
+                inputs_unstacked.append(input_unstacked)
+                
+            
+            outputs, states = tf.compat.v1.nn.static_rnn(lstm_cell1, inputs_unstacked, dtype=tf.float32)
+                
+            #apply lstm
+            n_lstm2 = 500
+            
+            lstm_cell2 = tf.compat.v1.nn.rnn_cell.BasicLSTMCell(n_lstm2, name="LSTM2")            
+            outputs2, states2 = tf.compat.v1.nn.static_rnn(lstm_cell2, outputs, dtype=tf.float32)
+            
+            #apply lstm
+            n_lstm3 = 500
+            lstm_cell3 = tf.compat.v1.nn.rnn_cell.BasicLSTMCell(n_lstm3, name="LSTM3")
+            outputs3, states3 = tf.compat.v1.nn.static_rnn(lstm_cell3, outputs2, dtype=tf.float32)
+            
+            #apply lstm
+            n_lstm4 = 500
+            lstm_cell4 = tf.compat.v1.nn.rnn_cell.BasicLSTMCell(n_lstm4, name = "LSTM4")
+            outputs4, states4 = tf.compat.v1.nn.static_rnn(lstm_cell4, outputs3, dtype = tf.float32)
+            
+            #concatatnet
+            net = tf.compat.v1.concat(outputs4, 1)
+            
+            #apply fully connceted
+            n1 = 500
+            W1 = tf.Variable(initializer(shape = np.array([n_lstm2*5, n1])) , name="W1")
+            b1 = tf.Variable(initializer(shape = np.array([n1])), name="b1")
+            net = tf.add(tf.matmul(net,W1),b1)
+            net = tf.nn.relu(net)
+            
+            n2 = 500
+            W2 = tf.Variable(initializer(shape = np.array([n1,n2])), name="W2")
+            b2 = tf.Variable(initializer(shape = np.array([n2])), name="b2")
+            net = tf.add(tf.matmul(net,W2), b2)
+            net = tf.nn.relu(net)
+            
+            W3 = tf.Variable(initializer(shape = np.array([n2,self.output_dim])), name="W3")
+            b3 = tf.Variable(initializer(shape = np.array([self.output_dim])), name="b3")
+            net = tf.add(tf.matmul(net,W3), b3)
+            
+            self.output = net
+            
+            #define loss and loss        
+            self.loss = tf.math.reduce_mean(tf.compat.v2.losses.mse(self.output, self.Label))
+            
+            self.init_op = tf.compat.v1.global_variables_initializer()
+            
+            self.optimizer = tf.compat.v1.train.GradientDescentOptimizer(learning_rate = self.lr).minimize(self.loss)
             
     def initialize_variables_and_sess(self):
         self.sess = tf.compat.v1.Session(config=tf.compat.v1.ConfigProto(log_device_placement=True))
