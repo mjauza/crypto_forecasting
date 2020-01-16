@@ -154,7 +154,106 @@ class Agent():
         self.train_gen_eval = self.generator(min_index=0, max_index=n, time_width=self.time_width, time_step=self.time_step)
         self.num_steps_train_eval = round((n - self.time_width) / self.time_step)
         
+    def get_file_in_arrf_format(self,filename, mode="train"):
+        f = open(filename, "w")
+        if mode == "train":
+            gen = self.train_gen_eval
+            num_steps = self.num_steps_train_eval
+        elif mode=="test":
+            gen = self.test_gen
+            num_steps = self.num_steps_test
+        else:
+            f.close()
+            raise Exception("Wrong mode")
+        f.write("@RELATION cryptoTimeSeries\n")
         
+        a1 = ['Open_BCH','High_BCH', 'Low_BCH', 'Close_BCH', 'Volume_BCH', 'Transactions_BCH']
+        a2 =  ['Open_ETH','High_ETH', 'Low_ETH', 'Close_ETH','Volume_ETH', 'Transactions_ETH']
+        a3 = ['Open','High', 'Low', 'Close','Volume', 'Transactions']
+        a4 = ['Open_XBT','High_XBT', 'Low_XBT','Close_XBT', 'Volume_XBT', 'Transactions_XBT']
+        a5 = ['Open_XRP','High_XRP','Low_XRP', 'Close_XRP', 'Volume_XRP', 'Transactions_XRP']
+        atributes = [a1,a2,a3,a4,a5]
+        for a in atributes:
+            for i in range(len(a)):
+                a_name = a[i]
+                f.write("@ATTRIBUTE " + a_name + " timeseries\n")
+        
+        f.write("@ATTRIBUTE target timeseries\n")
+        
+        
+        f.write("@DATA\n")
+        for s in range(num_steps):
+            inputs, y, t, y_original = next(gen)
+            
+            for x in inputs:
+                for i in range(x.shape[1]):
+                    f.write(str(x[:, i].tolist()) + ",") 
+                    
+            
+            f.write(str(y.tolist()))
+            f.write("\n")
+        
+        f.close()
+    
+    def get_file_in_arrf_format_1(self,filename, mode="train",max_num_steps=None):
+        f = open(filename, "w")
+        if mode == "train":
+            gen = self.train_gen_eval
+            num_steps = self.num_steps_train_eval
+        elif mode=="test":
+            gen = self.test_gen
+            num_steps = self.num_steps_test
+        else:
+            f.close()
+            raise Exception("Wrong mode")
+            
+        if (max_num_steps is not None) & (num_steps > max_num_steps):
+            num_steps = max_num_steps
+            
+        print("using number of steps =", num_steps)
+        
+        f.write("@RELATION cryptoTimeSeries\n")
+        
+        a1 = ['Open_BCH','High_BCH', 'Low_BCH', 'Close_BCH', 'Volume_BCH', 'Transactions_BCH']
+        a2 =  ['Open_ETH','High_ETH', 'Low_ETH', 'Close_ETH','Volume_ETH', 'Transactions_ETH']
+        a3 = ['Open','High', 'Low', 'Close','Volume', 'Transactions']
+        a4 = ['Open_XBT','High_XBT', 'Low_XBT','Close_XBT', 'Volume_XBT', 'Transactions_XBT']
+        a5 = ['Open_XRP','High_XRP','Low_XRP', 'Close_XRP', 'Volume_XRP', 'Transactions_XRP']
+        atributes = [a1,a2,a3,a4,a5]
+        number_of_desc_att = 0
+        for a in atributes:
+            for i in range(len(a)):
+                a_name = a[i]
+                for j in range(self.time_width):
+                    f.write("@ATTRIBUTE " + a_name + "_" +str(j) + " numeric\n")
+                    number_of_desc_att += 1
+        
+        for i in range(5):
+            name = self.pred_columns[i]
+            f.write("@ATTRIBUTE " + name + " numeric\n")
+            
+                
+        f.write("@DATA\n")
+        for s in range(num_steps):
+            inputs, y, t, y_original = next(gen)
+            
+            for x in inputs:
+                for i in range(x.shape[1]):
+                    for x_i in x[:, i].tolist():
+                        f.write(str(x_i) + ",") 
+            
+            y_list = y.tolist()
+            for j in range(5): 
+                f.write(str(y_list[j]))
+                if j != 4:
+                    f.write(",")
+            
+            f.write("\n")
+        
+        f.close()
+        print(number_of_desc_att)
+            
+            
     
     def run_generator_n_times(self, gen , n):
         input1_batch = []
@@ -362,9 +461,88 @@ class Agent():
         
         self.plot_results(y_list,y_pred_list,ending="_train_results")
         self.plot_results(y_scaled_list, y_scaled_pred_list, ending = "_scaled_train_results")
+    
+    def evaluate_clus_results(self, csv_filename):
+        
+        f_date = datetime.now()
+        fname = str(datetime(f_date.year, f_date.month, f_date.day, f_date.hour, f_date.minute)) + "_clus_test.log"
+        fname = fname.replace(":","-")
+        path = "../crypto_results/log/"+fname
+        
+        self.clus_test_logger = self.utils.get_logger("clus_test_logger", path)
+        
+        
+        df = pd.read_csv(csv_filename, header=0)
+        cols = df.columns.values.tolist()
+        new_cols = [c.strip() for c in cols]
+        df.columns = new_cols
+        
+        num_steps = df.shape[0]
+
+        original_model_names = ["Original-p-Open_BCH", "Original-p-Open_ETH", "Original-p-Open","Original-p-Open_XBT","Original-p-Open_XRP"]
+        pruned_model_names = ["Pruned-p-Open_BCH","Pruned-p-Open_ETH","Pruned-p-Open","Pruned-p-Open_XBT","Pruned-p-Open_XRP"]
+        
+        df_original_model = df[original_model_names]
+        df_pruned_model = df[pruned_model_names]
+        
+        del df
+        
+        y_list = []
+        y_original_model_pred_list = []
+        y_pruned_model_pred_list = []
+        
+        up_moves_pred_orig_model_list = []
+        up_moves_pred_prune_model_list = []
+        up_moves_real_list = []
+        
+        for i in range(num_steps):
+            inputs, y, t, y_original = next(self.test_gen)
+            y_pred_original_model = df_original_model.iloc[i,:].values
+            y_pred_pruned_model = df_pruned_model.iloc[i,:].values
+            y_pred_orig_model_unscaled = self.unscale_y(y_pred_original_model)
+            y_pred_prune_model_unscaled = self.unscale_y(y_pred_pruned_model)
+            
+            if i == 0:
+                y_prev = y_original
+                y_pred_original_model_prev = y_pred_orig_model_unscaled
+                y_pred_pruned_model_prev = y_pred_prune_model_unscaled
+            
+            y_list.append(y_original.tolist())
+            y_original_model_pred_list.append(y_pred_orig_model_unscaled.tolist()[0])
+            y_pruned_model_pred_list.append(y_pred_prune_model_unscaled.tolist()[0])
+            
+            if i > 0:
+                up_pred_original_model = (y_pred_orig_model_unscaled - y_pred_original_model_prev) > 0
+                up_pred_pruned_model = (y_pred_prune_model_unscaled - y_pred_pruned_model_prev) > 0
+                up_real = (y_original - y_prev) > 0
+                
+                
+                up_moves_pred_orig_model_list.append(up_pred_original_model.tolist()[0])
+                up_moves_pred_prune_model_list.append(up_pred_pruned_model.tolist()[0])
+                up_moves_real_list.append(up_real.tolist())
+                
+                y_prev = y_original
+                y_pred_original_model_prev = y_pred_orig_model_unscaled
+                y_pred_pruned_model_prev = y_pred_prune_model_unscaled
+        
+        
+        self.clus_test_logger.info("Doing clus test evaluation")        
+        
+        self.clus_test_logger.info("Doing original model evaluation")
+        self.calculate_acc(up_moves_pred_orig_model_list, up_moves_real_list, self.clus_test_logger)
+        self.calculate_rmse(y_list, y_original_model_pred_list, self.clus_test_logger)
+        
+        self.clus_test_logger.info("Doing pruned model evaluation")
+        self.calculate_acc(up_moves_pred_prune_model_list, up_moves_real_list, self.clus_test_logger)
+        self.calculate_rmse(y_list, y_pruned_model_pred_list, self.clus_test_logger)
+                       
+        self.plot_results(y_list,y_original_model_pred_list,ending="_clus_test_results_original_model")
+        self.plot_results(y_list,y_pruned_model_pred_list,ending="_clus_test_results_pruned_model")
+        
+        
         
     
-    def plot_results(self, y_list,y_pred_list, directory="../crypto_results/figures/", ending="_test_resuls"):
+    def plot_results(self, y_list,y_pred_list, directory="../crypto_results/figures/", ending="_test_results"):
         y_np = np.array(y_list)
         y_pred_np = np.array(y_pred_list)
         print(y_np.shape)
@@ -397,6 +575,8 @@ class Agent():
     def calculate_rmse(self, y_list, y_pred_list, logger):
         y_np = np.array(y_list)
         y_pred_np = np.array(y_pred_list)
+        print("y_np.shape = ",y_np.shape)
+        print("y_pred_np.shape = ",y_pred_np.shape)
         for i in range(y_np.shape[1]):
             symbol = self.symbol_list[i]
             mse = np.mean( (y_np[:,i] -  y_pred_np[:,i])**2 )
@@ -424,12 +604,20 @@ if __name__ == "__main__":
                   batch_size=512,
                   restore = True,
                   restore_dir="../crypto_results/checkpoint")
-    agent.train_model(num_epochs=30)
-    y_errors = agent.test_model()
+    #agent.train_model(num_epochs=30)
+    #y_errors = agent.test_model()
     #avg_error = np.mean(np.array(y_errors))
     #print("Avergae error = {}".format(avg_error))
     
-    agent.evaluate_model(agent.train_gen_eval, agent.num_steps_train_eval)
+    #agent.evaluate_model(agent.train_gen_eval, agent.num_steps_train_eval)
+    
+    #agent.get_file_in_arrf_format(filename="test_data.arff", mode="test")
+    #agent.get_file_in_arrf_format_1(filename="test_data_1.arff", mode="test",max_num_steps=500)
+    #agent.get_file_in_arrf_format_1(filename="cryptoTimeSeries1.arff", mode="train")
+    
+    csv_filename = "../crypto_data/cryptoTimeSeries1_test_predictions.csv"
+    agent.evaluate_clus_results(csv_filename)
+    
     
     agent.model.close_session()
     logging.shutdown()
