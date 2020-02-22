@@ -539,6 +539,110 @@ class Agent():
         self.plot_results(y_list,y_original_model_pred_list,ending="_clus_test_results_original_model")
         self.plot_results(y_list,y_pruned_model_pred_list,ending="_clus_test_results_pruned_model")
         
+    
+    def get_column_names_forest(self, number):
+        
+        
+        name1 = "Forest with {} trees-p-Open_BCH".format(number)
+        name2 = "Forest with {} trees-p-Open_ETH".format(number)
+        name3 = "Forest with {} trees-p-Open".format(number)
+        name4 = "Forest with {} trees-p-Open_XBT".format(number)
+        name5 = "Forest with {} trees-p-Open_XRP".format(number)
+        
+        return [name1, name2, name3, name4, name5]
+        
+    
+    def get_evaluate_one_clus_result(self,df_results, num_steps, description, gen):
+        y_list = []
+        y_model_pred_list = []
+        #y_pruned_model_pred_list = []
+        
+        up_moves_pred_list = []
+        #up_moves_pred_prune_model_list = []
+        up_moves_real_list = []
+        
+        for i in range(num_steps):
+            inputs, y, t, y_original = next(gen)
+            y_pred_model = df_results.iloc[i,:].values            
+            y_pred_model_unscaled = self.unscale_y(y_pred_model)
+            
+            if i == 0:
+                y_prev = y_original
+                y_pred_model_prev = y_pred_model_unscaled
+                
+            
+            y_list.append(y_original.tolist())
+            y_model_pred_list.append(y_pred_model_unscaled.tolist()[0])
+            
+            if i > 0:
+                up_pred_model = (y_pred_model_unscaled - y_pred_model_prev) > 0
+                up_real = (y_original - y_prev) > 0
+                
+                
+                up_moves_pred_list.append(up_pred_model.tolist()[0])
+                up_moves_real_list.append(up_real.tolist())
+                
+                y_prev = y_original
+                y_pred_model_prev = y_pred_model_unscaled
+        
+        self.clus_test_logger.info("Doing clus test evaluation")        
+        
+        self.clus_test_logger.info("Doing " + description + " model evaluation")
+        self.calculate_acc(up_moves_pred_list, up_moves_real_list, self.clus_test_logger)
+        self.calculate_rmse(y_list, y_model_pred_list, self.clus_test_logger)
+        
+                       
+        self.plot_results(y_list,y_model_pred_list,ending="_clus_test_results_" + description + "_model")
+        
+        
+        
+    def evaluate_clus_forest_results(self, csv_filename, forest_num_list = [10,30,50,100]):
+        
+        f_date = datetime.now()
+        fname = str(datetime(f_date.year, f_date.month, f_date.day, f_date.hour, f_date.minute)) + "_clus_test.log"
+        fname = fname.replace(":","-")
+        path = "../crypto_results/log/"+fname
+        
+        self.clus_test_logger = self.utils.get_logger("clus_test_logger", path)
+        
+        
+        df = pd.read_csv(csv_filename, header=0)
+        cols = df.columns.values.tolist()
+        new_cols = [c.strip() for c in cols]
+        df.columns = new_cols
+        print(df.columns)
+        
+        num_steps = df.shape[0]
+
+        #original_model_names = ["Original-p-Open_BCH", "Original-p-Open_ETH", "Original-p-Open","Original-p-Open_XBT","Original-p-Open_XRP"]
+        #pruned_model_names = ["Pruned-p-Open_BCH","Pruned-p-Open_ETH","Pruned-p-Open","Pruned-p-Open_XBT","Pruned-p-Open_XRP"]
+        
+        #forest_10_names = self.get_column_names_forest(10)
+        #forest_30_names = self.get_column_names_forest(30)
+        #forest_50_names = self.get_column_names_forest(50)
+        #forest_100_names = self.get_column_names_forest(100)
+        
+        
+        
+        for i in range(len(forest_num_list)):
+            d = self.data.combined_data.shape[0]
+            n = round(d*(1-self.test_ratio))
+            test_gen = self.generator(min_index=n-self.time_width, max_index=d, time_width=self.time_width, time_step=self.time_step)
+            
+            forest_number = forest_num_list[i]
+            forest_name = self.get_column_names_forest(forest_number)
+            df_forest = df[forest_name]
+            desc_forest = "random_forest_{}".format(forest_number)
+            print("description = " + desc_forest)
+            self.get_evaluate_one_clus_result(df_forest, df.shape[0], desc_forest, test_gen)
+        
+        #df_original_model = df[original_model_names]
+        #df_pruned_model = df[pruned_model_names]
+        
+        
+        
+        
+        
         
         
     
@@ -616,8 +720,8 @@ if __name__ == "__main__":
     #agent.get_file_in_arrf_format_1(filename="cryptoTimeSeries1.arff", mode="train")
     
     csv_filename = "../crypto_data/cryptoTimeSeries1_test_predictions.csv"
-    agent.evaluate_clus_results(csv_filename)
-    
+    #agent.evaluate_clus_results(csv_filename)
+    agent.evaluate_clus_forest_results(csv_filename, forest_num_list = [200,300,500,1000])
     
     agent.model.close_session()
     logging.shutdown()
