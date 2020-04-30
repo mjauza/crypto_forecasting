@@ -60,7 +60,8 @@ class Agent():
         
         #self.model.build_model()
         #self.model.build_model_1()
-        self.model.build_model_4()
+        #self.model.build_model_4()
+        self.model.build_model_5()
         
         if not restore:            
             self.model.initialize_variables_and_sess()
@@ -207,7 +208,7 @@ class Agent():
             f.close()
             raise Exception("Wrong mode")
             
-        if (max_num_steps is not None) & (num_steps > max_num_steps):
+        if (max_num_steps is not None) and (num_steps > max_num_steps):
             num_steps = max_num_steps
             
         print("using number of steps =", num_steps)
@@ -324,6 +325,95 @@ class Agent():
             self.model.step += 1
         
         self.model.save_model()
+    
+    def get_baseline_metrics(self):
+        
+        f_date = datetime.now()
+        fname = str(datetime(f_date.year, f_date.month, f_date.day, f_date.hour, f_date.minute)) + "_baseline.log"
+        fname = fname.replace(":","-")
+        path = "../crypto_results/log/"+fname
+        
+        self.baseline_logger = self.utils.get_logger("baseline_logger", path)
+        
+        y_list = []
+        
+        #get train average and mjority class
+        for s in range(self.num_steps_train):
+            inputs, y, t, y_original = next(self.train_gen)
+            #y = self.unscale_y(y)
+            
+            y_list.append(y_original.tolist())
+            
+        y_np = np.array(y_list)
+        baseline_mean = np.mean(y_np,axis=0)
+        print("baseline_mean.shape = ",baseline_mean.shape)
+        baseline_regressor = np.ones((len(y_list), 5) )*baseline_mean
+        y_list_pred = baseline_regressor.tolist()
+        
+        y_diff = np.diff(y_np,axis=0)
+        print("y_diff.shape: ",y_diff.shape)
+        y_up = y_diff > 0
+        y_up_prob = np.mean(y_up,axis=0)
+        print("Probability of moving up is", y_up_prob)
+        
+        majority_classes = []
+        for up_prob in y_up_prob.tolist():
+            if up_prob > 0.5:
+                majority_classes.append(1)
+            else:
+                majority_classes.append(0)
+        
+        majority_vote_list = np.repeat([majority_classes],len(y_up), axis = 0)
+        print("majority_vote_list.shape",majority_vote_list.shape)
+        majority_vote_list = majority_vote_list.tolist()
+        
+        y_up_list = y_up.tolist()
+        
+        
+        #calculate the testing metrics
+        y_list_test = []
+        for s in range(self.num_steps_test):
+            inputs, y, t, y_original = next(self.test_gen)
+            y_list_test.append(y_original.tolist())
+        
+        y_np_test = np.array(y_list_test)
+        y_up_test = np.diff(y_np_test, axis=0) > 0
+        y_up_test_list = y_up_test.tolist()
+        
+        
+        baseline_regressor_test = np.ones((len(y_list_test), 5)) * baseline_mean
+        baseline_regressor_test_list = baseline_regressor_test.tolist()
+        
+        majority_vote_test_list = np.repeat([majority_classes],len(y_up_test), axis = 0)
+        majority_vote_test_list = majority_vote_test_list.tolist()
+        
+        
+        #write to file 
+        """
+        f = open("../crypto_results/baseline_reuslts.txt","w")
+        f.write("Baseline mean regressor: " + str(baseline_mean) + "\n")
+        f.write(str_maj_class+ "\n")
+        f.write("Train baseline MAE: " + str(train_mae)+ "\n")
+        f.write("Train baseline MSE: " + str(train_mse) + "\n")
+        f.write("Train baseline RMSE: " + str(train_rmse) + "\n")
+        f.write("Train baseline ACC: " + str(train_acc) + "\n")
+        f.write("Test baseline MAE: " + str(test_mae)+ "\n")
+        f.write("Test baseline MSE: " + str(test_mse) + "\n")
+        f.write("Test baseline RMSE: " + str(test_rmse)+ "\n")
+        f.write("Test baseline ACC: " + str(test_acc) + "\n")
+        f.close()
+        """
+        #train results
+        self.baseline_logger.info("Train results")
+        self.calculate_acc(majority_vote_list, y_up_list, self.baseline_logger)
+        self.calculate_rmse(y_list, y_list_pred, self.baseline_logger)
+    
+        self.baseline_logger.info("Test results")
+        self.calculate_acc(majority_vote_test_list, y_up_test_list, self.baseline_logger)
+        self.calculate_rmse(y_list_test, baseline_regressor_test_list, self.baseline_logger)
+        
+        
+            
     
     def test_model(self):
         
@@ -708,20 +798,23 @@ if __name__ == "__main__":
                   batch_size=512,
                   restore = True,
                   restore_dir="../crypto_results/checkpoint")
-    #agent.train_model(num_epochs=30)
-    #y_errors = agent.test_model()
-    #avg_error = np.mean(np.array(y_errors))
-    #print("Avergae error = {}".format(avg_error))
+    agent.train_model(num_epochs=30)
+    y_errors = agent.test_model()
+    avg_error = np.mean(np.array(y_errors))
+    print("Avergae error = {}".format(avg_error))
     
-    #agent.evaluate_model(agent.train_gen_eval, agent.num_steps_train_eval)
+    agent.evaluate_model(agent.train_gen_eval, agent.num_steps_train_eval)
     
     #agent.get_file_in_arrf_format(filename="test_data.arff", mode="test")
     #agent.get_file_in_arrf_format_1(filename="test_data_1.arff", mode="test",max_num_steps=500)
     #agent.get_file_in_arrf_format_1(filename="cryptoTimeSeries1.arff", mode="train")
+    #agent.get_file_in_arrf_format_1(filename="test_data_full.arff", mode="test",max_num_steps=None)
     
-    csv_filename = "../crypto_data/cryptoTimeSeries1_test_predictions.csv"
+    #csv_filename = "../crypto_data/cryptoTimeSeries1_test_predictions.csv"
     #agent.evaluate_clus_results(csv_filename)
-    agent.evaluate_clus_forest_results(csv_filename, forest_num_list = [200,300,500,1000])
+    #agent.evaluate_clus_forest_results(csv_filename, forest_num_list = [200,300,500,1000])
+    
+    #agent.get_baseline_metrics()
     
     agent.model.close_session()
     logging.shutdown()
